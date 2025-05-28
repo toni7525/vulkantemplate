@@ -1,7 +1,7 @@
 #include "UniformBuffer.h"
-#include <chrono>
+
 #include <iostream>
-UniformBuffer::UniformBuffer(Application* App, Pipeline* pipelinein):mainApp(App),pipeline(pipelinein)
+UniformBuffer::UniformBuffer(Application* App, Pipeline* pipelinein, Texture* intexture):mainApp(App),pipeline(pipelinein),texture(intexture)
 {
    createUniformBuffers();
    createDescriptorSets();
@@ -15,27 +15,29 @@ UniformBuffer::~UniformBuffer()
 
 void UniformBuffer::updateUniformBuffer(uint32_t currentImage)
 {
-    static auto startTime = std::chrono::high_resolution_clock::now();
-
-    auto currentTime = std::chrono::high_resolution_clock::now();
-    float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
+    glm::dot(glm::vec3(1,1,1), glm::vec3(1,1,1));
     UniformBufferObject ubo{};  
     ubo.model = glm::mat4(1.0f);
     ubo.view = glm::mat4(1.0f);
     ubo.proj = glm::mat4(1.0f);
-    ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-    ubo.view = glm::lookAt(glm::vec3(x, y+0.1f, -3.0f+z), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-    ubo.proj = glm::perspective(glm::radians(60.0f), mainApp->swapChainExtent.width / (float)(mainApp->swapChainExtent.height), 0.1f, 10.0f);
+    ubo.model = glm::rotate(glm::mat4(1.0f), glm::radians(time / 100.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+    ubo.view = glm::lookAt(glm::vec3(0, 0, 0), lookdir, glm::vec3(0.0f, 0.0f, 1.0f)) * glm::translate(glm::mat4(1), ppos);
+    ubo.proj = glm::perspective(glm::radians(60.0f-zoom), mainApp->swapChainExtent.width / (float)(mainApp->swapChainExtent.height), 0.1f, 10.0f);
     ubo.proj[1][1] *= -1;
-    std::cout << x << " " << y<<" " << -3.0f + z << " " << std::endl;
-    //glm::vec4 point = (ubo.proj * ubo.view * ubo.model * glm::vec4(-0.5f, -0.0f, 0.0f, 1.0f));
+
+    //std::cout << x << " " << y + 1.1f <<" " << -3.0f + z << " " << std::endl;
+    //glm::vec4 point1 = (ubo.view * ubo.model * glm::vec4(0.0f,0.0f, 0.0f, 1.0f));
+    //glm::vec4 point2 = (ubo.view * ubo.model * glm::vec4(1.5f,1.5f, 0.0f, 1.0f));
     //std::cout << point.x << "  " << point.y << " " << point.z << "  " << mainApp->swapChainExtent.width / (float)(mainApp->swapChainExtent.height) << std::endl;
+   // std::cout <<"first cube "<< point1.z <<" second cube  " << point2.z<<std::endl;
     memcpy(uniformBuffersMapped[currentImage], &ubo, sizeof(ubo));
 }
 
-void UniformBuffer::updatexyz(float xin, float yin, float zin)
-{
-    x=(xin); y=(yin); z=(zin);
+void UniformBuffer::updatexyz(glm::vec3 pposin, glm::vec3 lookdirin, float timein, float zoomin){
+    ppos = pposin;
+    lookdir = lookdirin;
+    time += timein;
+    zoom = zoomin;
 }
 
 void UniformBuffer::createUniformBuffers()
@@ -47,53 +49,11 @@ void UniformBuffer::createUniformBuffers()
     uniformBuffersMapped.resize(mainApp->MAX_FRAMES_IN_FLIGHT);
 
     for (size_t i = 0; i < mainApp->MAX_FRAMES_IN_FLIGHT; i++) {
-        createBuffer(bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, uniformBuffers[i], uniformBuffersMemory[i]);
+        mainApp->createBuffer(bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, uniformBuffers[i], uniformBuffersMemory[i]);
 
         vkMapMemory(mainApp->device, uniformBuffersMemory[i], 0, bufferSize, 0, &uniformBuffersMapped[i]);
     }
 }
-
-void UniformBuffer::createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory)
-{
-    VkBufferCreateInfo bufferInfo{};
-    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    bufferInfo.size = size;
-    bufferInfo.usage = usage;
-    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-    if (vkCreateBuffer(mainApp->device, &bufferInfo, nullptr, &buffer) != VK_SUCCESS) {
-        throw std::runtime_error("failed to create buffer!");
-    }
-
-    VkMemoryRequirements memRequirements;
-    vkGetBufferMemoryRequirements(mainApp->device, buffer, &memRequirements);
-
-    VkMemoryAllocateInfo allocInfo{};
-    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    allocInfo.allocationSize = memRequirements.size;
-    allocInfo.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, properties);
-
-    if (vkAllocateMemory(mainApp->device, &allocInfo, nullptr, &bufferMemory) != VK_SUCCESS) {
-        throw std::runtime_error("failed to allocate buffer memory!");
-    }
-
-    vkBindBufferMemory(mainApp->device, buffer, bufferMemory, 0);
-}
-
-uint32_t UniformBuffer::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties)
-{
-    VkPhysicalDeviceMemoryProperties memProperties;
-    vkGetPhysicalDeviceMemoryProperties(mainApp->physicalDevice, &memProperties);
-
-    for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
-        if ((typeFilter & (1 << i)) && (memProperties.memoryTypes[i].propertyFlags & properties) == properties) {
-            return i;
-        }
-    }
-
-    throw std::runtime_error("failed to find suitable memory type!");
-}
-
 
 void UniformBuffer::createDescriptorSets()
 {
@@ -103,7 +63,7 @@ void UniformBuffer::createDescriptorSets()
     allocInfo.descriptorPool = mainApp->descriptorPool;
     allocInfo.descriptorSetCount = static_cast<uint32_t>(mainApp->MAX_FRAMES_IN_FLIGHT);
     allocInfo.pSetLayouts = layouts.data();
-
+   
     descriptorSets.resize(mainApp->MAX_FRAMES_IN_FLIGHT);
     if (vkAllocateDescriptorSets(mainApp->device, &allocInfo, descriptorSets.data()) != VK_SUCCESS) {
         throw std::runtime_error("failed to allocate descriptor sets!");
@@ -115,15 +75,29 @@ void UniformBuffer::createDescriptorSets()
         bufferInfo.offset = 0;
         bufferInfo.range = sizeof(UniformBufferObject);
 
-        VkWriteDescriptorSet descriptorWrite{};
-        descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrite.dstSet = descriptorSets[i];
-        descriptorWrite.dstBinding = 0;
-        descriptorWrite.dstArrayElement = 0;
-        descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        descriptorWrite.descriptorCount = 1;
-        descriptorWrite.pBufferInfo = &bufferInfo;
+        VkDescriptorImageInfo imageInfo{};
+        imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        imageInfo.imageView = texture->textureImageView;
+        imageInfo.sampler = texture->textureSampler;
 
-        vkUpdateDescriptorSets(mainApp->device, 1, &descriptorWrite, 0, nullptr);
+        std::array<VkWriteDescriptorSet, 2> descriptorWrites{};
+
+        descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[0].dstSet = descriptorSets[i];
+        descriptorWrites[0].dstBinding = 0;
+        descriptorWrites[0].dstArrayElement = 0;
+        descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        descriptorWrites[0].descriptorCount = 1;
+        descriptorWrites[0].pBufferInfo = &bufferInfo;
+
+        descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[1].dstSet = descriptorSets[i];
+        descriptorWrites[1].dstBinding = 1;
+        descriptorWrites[1].dstArrayElement = 0;
+        descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        descriptorWrites[1].descriptorCount = 1;
+        descriptorWrites[1].pImageInfo = &imageInfo;
+
+        vkUpdateDescriptorSets(mainApp->device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
     }
 }
